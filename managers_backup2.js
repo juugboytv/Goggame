@@ -86,6 +86,94 @@ showToast("Failed to save game.", true);
 }
 }
 };
+// --- Chat Manager ---
+const ChatManager = {
+async init() {
+try {
+const firebaseConfig = {
+apiKey: "AIzaSyA8wfcXLXVP2KanuhGPQeKnOeeGPDRKLzk",
+authDomain: "gem-inus-on-ga-me.firebaseapp.com",
+projectId: "gem-inus-on-ga-me",
+storageBucket: "gem-inus-on-ga-me.appspot.com",
+messagingSenderId: "663073930106",
+appId: "1:663073930106:web:dbf2001917e856150134c3"
+};
+if (!firebaseConfig.apiKey || firebaseConfig.apiKey.startsWith("YOUR_")) {
+ModalManager.show("Configuration Needed", `<div class="text-center"><p class="mb-4">Welcome, Developer!</p><p>To enable saving, you need to add your Firebase configuration to the code.</p><p class="mt-2 text-sm text-gray-400">Please create a Firebase project and paste the config object into the designated area.</p></div>`);
+return;
+}
+const appId = 'geminus-game';
+const app = window.firebase.initializeApp(firebaseConfig);
+state.firebase.db = window.firebase.getFirestore(app);
+state.firebase.auth = window.firebase.getAuth(app);
+await window.firebase.signInAnonymously(state.firebase.auth);
+state.firebase.userId = state.firebase.auth.currentUser.uid;
+if (!state.firebase.userId) throw new Error("Anonymous authentication failed.");
+const userDocPath = `/artifacts/${appId}/users/${state.firebase.userId}`;
+state.firebase.playerDocRef = window.firebase.doc(state.firebase.db, userDocPath);
+console.log("Firebase initialized and user authenticated:", state.firebase.userId);
+await this.loadPlayer();
+} catch (error) {
+console.error("Error initializing Firebase or loading data:", error);
+showToast("Could not connect to the game server.", true);
+CreationManager.init();
+}
+},
+async loadPlayer() {
+try {
+const docSnap = await window.firebase.getDoc(state.firebase.playerDocRef);
+if (docSnap.exists()) {
+console.log("Player data found, loading character...");
+state.player = docSnap.data();
+if(typeof state.player.inventory === 'string') state.player.inventory = JSON.parse(state.player.inventory);
+if(typeof state.player.equipment === 'string') state.player.equipment = JSON.parse(state.player.equipment);
+if(typeof state.player.gems === 'string') state.player.gems = JSON.parse(state.player.gems);
+GameManager.init();
+} else {
+console.log("No player data found, starting character creation.");
+CreationManager.init();
+}
+} catch (error) {
+console.error("Error loading player data:", error);
+showToast("Failed to load your character.", true);
+CreationManager.init();
+}
+},
+async savePlayer(playerData) {
+if (!state.firebase.playerDocRef) return console.error("Cannot save: Firebase is not initialized.");
+try {
+const dataToSave = {
+...playerData,
+inventory: JSON.stringify(playerData.inventory),
+equipment: JSON.stringify(playerData.equipment),
+gems: JSON.stringify(playerData.gems),
+lastSaved: window.firebase.serverTimestamp()
+};
+await window.firebase.setDoc(state.firebase.playerDocRef, dataToSave);
+console.log("Player data saved successfully.");
+} catch (error) {
+console.error("Error saving player data:", error);
+showToast("Failed to save character progress.", true);
+}
+},
+async updatePlayer(fieldsToUpdate) {
+if (!state.firebase.playerDocRef) return console.error("Cannot update: Firebase is not initialized.");
+try {
+const updates = {...fieldsToUpdate};
+for(const key in updates) {
+if(typeof updates[key] === 'object' && updates[key] !== null) {
+updates[key] = JSON.stringify(updates[key]);
+}
+}
+updates.lastSaved = window.firebase.serverTimestamp();
+await window.firebase.updateDoc(state.firebase.playerDocRef, updates);
+} catch (error) {
+if (error.code === 'not-found') await this.savePlayer(state.player);
+else console.error("Error updating player data:", error);
+}
+}
+};
+// --- Chat Manager ---
 const ChatManager = {
 isInitialized: false,
 init() {
@@ -1565,6 +1653,64 @@ const ZoneManager = {
         if (!state.player) return;
          // Draw map data if it's loaded, otherwise, it will draw a blank canvas
         this.mapRenderer.draw(MapDataStore.data, state.player.pos);
+    }
+};
+
+// Map Data Store - handles zone data loading and asset management
+const MapDataStore = {
+    data: null,
+    assetImages: {},
+    isLoaded: false,
+    async load(zoneData) {
+        this.isLoaded = false;
+        console.log(`Loading new map: ${zoneData.zoneName}`);
+        this.data = zoneData;
+        
+        const assetPromises = [];
+        if (this.data.assetLibrary) {
+            for (const assetId in this.data.assetLibrary) {
+                const asset = this.data.assetLibrary[assetId];
+                if (asset.imageUrl && !this.assetImages[asset.imageUrl]) {
+                    assetPromises.push(new Promise((resolve) => {
+                        const img = new Image();
+                        img.crossOrigin = 'Anonymous';
+                        img.onload = () => { this.assetImages[asset.imageUrl] = img; resolve(); };
+                        img.onerror = () => { console.warn(`Failed to load asset image: ${asset.imageUrl}`); resolve(); };
+                        img.src = asset.imageUrl;
+                    }));
+                }
+            }
+        }
+        await Promise.all(assetPromises);
+        this.isLoaded = true;
+        console.log("Map data loaded and assets pre-cached.");
+    },
+    getAssetImage(assetId) {
+        const asset = this.data.assetLibrary?.[assetId];
+        return asset?.imageUrl ? this.assetImages[asset.imageUrl] : null;
+    }
+};
+
+// Map Loader - handles map file loading
+const MapLoader = {
+    loadMapFile(file) {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const mapData = JSON.parse(e.target.result);
+                if (!mapData.layers || !mapData.assetLibrary) {
+                    throw new Error("Invalid map file format.");
+                }
+                await MapDataStore.load(mapData);
+                ZoneManager.loadZone(MapDataStore.data);
+                showToast("Map imported successfully!");
+            } catch (error) {
+                console.error("Error loading map file:", error);
+                showToast(`Failed to load map: ${error.message}`, true);
+            }
+        };
+        reader.readAsText(file);
     }
 };
 

@@ -1,30 +1,13 @@
-import { Systems } from './systems.js';
-import { races, progression, items, gddConstants, bestiary, gems, equipmentSlotConfig } from './gdd.js';
-
-// Global references that will be set by main.js
-let state, ui, showToast, embeddedZoneData, updateSmokeParticleColors, initSmokeParticles;
-
-// Function to initialize global references from main.js
-function initializeGlobals(globals) {
-    state = globals.state;
-    ui = globals.ui;
-    showToast = globals.showToast;
-    embeddedZoneData = globals.embeddedZoneData;
-    updateSmokeParticleColors = globals.updateSmokeParticleColors;
-    initSmokeParticles = globals.initSmokeParticles;
-}
-
 const DataManager = {
 async init() {
 try {
-// Updated Firebase configuration for actual Geminus project
 const firebaseConfig = {
-  apiKey: "AIzaSyCTkAvrEXs86AxsfdPJCh7ztg_sLA9htvU",
-  authDomain: "geminus-online-game-6cbaa.firebaseapp.com",
-  projectId: "geminus-online-game-6cbaa",
-  storageBucket: "geminus-online-game-6cbaa.firebasestorage.app",
-  messagingSenderId: "944055170590",
-  appId: "1:944055170590:web:c58245636ee3643832200f"
+apiKey: "AIzaSyA8wfcXLXVP2KanuhGPQeKnOeeGPDRKLzk",
+authDomain: "gem-inus-on-ga-me.firebaseapp.com",
+projectId: "gem-inus-on-ga-me",
+storageBucket: "gem-inus-on-ga-me.appspot.com",
+messagingSenderId: "663073930106",
+appId: "1:663073930106:web:dbf2001917e856150134c3"
 };
 if (!firebaseConfig.apiKey || firebaseConfig.apiKey.startsWith("YOUR_")) {
 ModalManager.show("Configuration Needed", `<div class="text-center"><p class="mb-4">Welcome, Developer!</p><p>To enable saving, you need to add your Firebase configuration to the code.</p><p class="mt-2 text-sm text-gray-400">Please create a Firebase project and paste the config object into the designated area.</p></div>`);
@@ -75,17 +58,33 @@ const dataToSave = {
 inventory: JSON.stringify(playerData.inventory),
 equipment: JSON.stringify(playerData.equipment),
 gems: JSON.stringify(playerData.gems),
-lastUpdated: window.firebase.serverTimestamp()
+lastSaved: window.firebase.serverTimestamp()
 };
-await window.firebase.setDoc(state.firebase.playerDocRef, dataToSave, { merge: true });
-console.log("Player data saved successfully!");
-showToast("Game saved successfully.");
+await window.firebase.setDoc(state.firebase.playerDocRef, dataToSave);
+console.log("Player data saved successfully.");
 } catch (error) {
 console.error("Error saving player data:", error);
-showToast("Failed to save game.", true);
+showToast("Failed to save character progress.", true);
+}
+},
+async updatePlayer(fieldsToUpdate) {
+if (!state.firebase.playerDocRef) return console.error("Cannot update: Firebase is not initialized.");
+try {
+const updates = {...fieldsToUpdate};
+for(const key in updates) {
+if(typeof updates[key] === 'object' && updates[key] !== null) {
+updates[key] = JSON.stringify(updates[key]);
+}
+}
+updates.lastSaved = window.firebase.serverTimestamp();
+await window.firebase.updateDoc(state.firebase.playerDocRef, updates);
+} catch (error) {
+if (error.code === 'not-found') await this.savePlayer(state.player);
+else console.error("Error updating player data:", error);
 }
 }
 };
+// --- Chat Manager ---
 const ChatManager = {
 isInitialized: false,
 init() {
@@ -1566,11 +1565,4 @@ const ZoneManager = {
          // Draw map data if it's loaded, otherwise, it will draw a blank canvas
         this.mapRenderer.draw(MapDataStore.data, state.player.pos);
     }
-};
-
-export { 
-    initializeGlobals, DataManager, ChatManager, SettingsManager, MapDataStore, MapLoader, MapRenderer, WorldMapManager, 
-    ModalManager, CreationManager, ProfileManager, CombatManager, SanctuaryManager, 
-    StatsManager, InventoryManager, EquipmentManager, UIManager, GameManager, 
-    LayoutManager, ZoneManager 
 };
